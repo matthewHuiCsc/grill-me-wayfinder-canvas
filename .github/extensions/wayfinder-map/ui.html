@@ -1,0 +1,568 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wayfinder Map</title>
+<style>
+:root {
+    --bg: var(--background-color-default, #fff);
+    --fg: var(--text-color-default, #1f2328);
+    --muted: var(--text-color-muted, #59636e);
+    --border: var(--border-color-default, #d1d9e0);
+    --green: var(--true-color-green, #1a7f37);
+    --green-m: var(--true-color-green-muted, rgba(26,127,55,.12));
+    --blue: var(--true-color-blue, #0969da);
+    --blue-m: var(--true-color-blue-muted, rgba(9,105,218,.12));
+    --orange: var(--true-color-orange, #bc4c00);
+    --orange-m: var(--true-color-orange-muted, rgba(188,76,0,.12));
+    --purple: var(--true-color-purple, #8250df);
+    --purple-m: var(--true-color-purple-muted, rgba(130,80,223,.12));
+    --red: var(--true-color-red, #cf222e);
+    --red-m: var(--true-color-red-muted, rgba(207,34,46,.12));
+    --card-w: 228px; --card-h: 116px;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+    margin: 0; display: flex; flex-direction: column; overflow: hidden;
+    background: var(--bg); color: var(--fg);
+    font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+    font-size: var(--text-body-medium, 14px); line-height: var(--leading-body-medium, 20px);
+}
+button { font: inherit; color: inherit; }
+a { color: var(--blue); }
+code { font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace); font-size: var(--text-code-inline, 12px); }
+header { padding: 10px 14px; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+header h1 { font-size: 16px; font-weight: var(--font-weight-semibold, 600); margin: 0; flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.chip { border: 1px solid var(--border); border-radius: 999px; padding: 0 8px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.chip b { color: var(--fg); font-weight: var(--font-weight-semibold, 600); }
+.btn { border: 1px solid var(--border); background: transparent; border-radius: 6px; padding: 3px 10px; cursor: pointer; }
+.btn:hover:not(:disabled) { border-color: var(--muted); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn.primary { background: var(--green); border-color: var(--green); color: var(--color-white, #fff); }
+.btn.link { border: 0; padding: 0; color: var(--blue); text-decoration: underline; }
+.banner { padding: 6px 14px; font-size: 12px; border-bottom: 1px solid var(--border); }
+.banner.err { background: var(--red-m); color: var(--red); }
+.banner.warn { background: var(--orange-m); }
+.dest { padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
+.dest .lbl { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; margin-right: 6px; }
+main { flex: 1; display: flex; min-height: 0; }
+#graphWrap { flex: 1; overflow: auto; position: relative; }
+#graph { position: relative; margin: 0 auto; }
+svg.edges { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+svg.edges path.edge { fill: none; stroke: var(--muted); stroke-width: 1.5; opacity: .6; }
+svg.edges path.context { stroke-dasharray: 4 6; opacity: .4; }
+#graph.focused svg.edges path.edge:not(.hl):not(.context):not(.route) { opacity: .15; }
+svg.edges path.done { stroke: var(--green); opacity: .55; stroke-width: 1.5; }
+svg.edges path.route { stroke: var(--blue); opacity: .75; stroke-width: 2.5; }
+svg.edges path.hl { stroke: var(--fg); opacity: .9; stroke-width: 2; }
+/* Blue is reserved for "you are here": the session's own ticket and its route. */
+#graph .card.here { border: 2px solid var(--blue); border-top-left-radius: 0; box-shadow: 0 8px 22px -6px rgba(9,105,218,.45); }
+#graph .card.here .node-icon { border-right-color: var(--blue); }
+.here-pin { position: absolute; transform: translateY(-100%); background: var(--blue); color: #fff; font-size: 11px; line-height: 16px; font-weight: 600; padding: 3px 9px 3px 7px; border-radius: 6px 6px 0 0; display: inline-flex; gap: 4px; align-items: center; pointer-events: none; white-space: nowrap; }
+.here-pin svg, .here-key svg, .here-chip svg { width: 12px; height: 12px; flex: none; }
+.here-key { border: 0; background: none; padding: 0; font: inherit; color: var(--blue); font-weight: 600; display: inline-flex; gap: 4px; align-items: center; }
+.here-chip { border: 0; background: var(--blue); color: #fff; border-radius: 999px; padding: 2px 10px 2px 8px; font-size: 12px; font-weight: 600; display: inline-flex; gap: 5px; align-items: center; cursor: pointer; max-width: 320px; }
+.here-chip span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.here-chip:hover { filter: brightness(1.1); }
+.here-chip:focus-visible, .card:focus-visible, .btn:focus-visible, .journey-anchor:focus-visible { outline: 2px solid var(--fg); outline-offset: 2px; }
+.colhead { position: absolute; top: 8px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.lane { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--border); }
+.card {
+    position: absolute; width: var(--card-w); height: var(--card-h); text-align: left;
+    border: 1px solid var(--type-color, var(--border)); border-radius: 8px; padding: 0;
+    background: var(--bg); cursor: pointer; display: flex; overflow: hidden;
+}
+.card:hover { box-shadow: 0 0 0 1px var(--type-color, var(--muted)); }
+.card.sel { outline: 2px solid var(--fg); outline-offset: 3px; }
+#graph .card.here.sel { outline: none; }
+/* Status changes the card's weight; type keeps its hue. */
+.card.blocked { border-style: dashed; }
+.card.blocked .node-icon { border-right-style: dashed; opacity: .7; }
+.card.resolved { border-color: color-mix(in srgb, var(--green) 45%, var(--border)); background: color-mix(in srgb, var(--green) 5%, var(--bg)); }
+.card.resolved .node-icon { background: var(--green-m); color: var(--green); border-right-color: color-mix(in srgb, var(--green) 45%, var(--border)); }
+.card.resolved .node-icon svg { width: 22px; height: 22px; stroke-width: 2.4; }
+.card.resolved .node-type { color: var(--muted); }
+.card.resolved .t { color: var(--muted); font-weight: 500; }
+.card.resolved:hover { box-shadow: 0 0 0 1px var(--green); }
+.type-grilling { --type-color: var(--red); }
+.type-prototype { --type-color: var(--orange); }
+.type-research { --type-color: var(--purple); }
+.type-task, .type-unknown { --type-color: var(--muted); }
+.node-icon { width: 40px; flex: none; display: grid; place-items: center; color: var(--type-color); border-right: 1px solid var(--type-color); }
+.node-icon svg { width: 20px; height: 20px; }
+.node-content { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; padding: 8px; }
+.node-type { color: var(--type-color); font-size: 10px; font-weight: 600; }
+.card .t { font-weight: var(--font-weight-semibold, 600); font-size: 13px; line-height: 17px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .m { display: flex; gap: 6px; align-items: center; font-size: 11px; color: var(--muted); margin-top: auto; white-space: nowrap; overflow: hidden; }
+.card.out-of-scope { opacity: .65; }
+.card.out-of-scope .t { text-decoration: line-through; }
+.session-note { color: var(--muted); font-size: 10px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: flex; gap: 4px; align-items: center; }
+.session-note svg { width: 11px; height: 11px; flex: none; }
+.card.here .session-note { color: var(--blue); font-weight: 600; }
+.journey-anchor .home-line { display: flex; gap: 4px; align-items: center; margin-top: 4px; color: var(--fg); font-size: 11px; line-height: 14px; -webkit-line-clamp: 1; }
+.journey-anchor { position: absolute; width: 284px; min-height: 74px; border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; background: var(--bg); display: flex; gap: 12px; align-items: center; text-align: left; cursor: pointer; }
+.journey-anchor svg { width: 24px; height: 24px; flex: none; color: var(--muted); }
+.journey-anchor strong { display: block; font-size: 14px; }
+.journey-anchor small { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--muted); font-size: 12px; line-height: 16px; }
+.journey-anchor.fog { border-style: dashed; background: repeating-linear-gradient(135deg, transparent 0 11px, var(--border) 11px 12px), var(--bg); }
+.journey-anchor.destination { border-color: var(--green); }
+.graph-help { padding: 8px 14px; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 11px; display: flex; flex-wrap: wrap; gap: 12px; }
+.type-key { color: var(--type-color); font-weight: 600; }
+.session-picker { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.session-picker select { width: 100%; min-width: 0; font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px; }
+.session-status { margin-top: 8px; font-size: 12px; }
+.session-status.error { color: var(--red); }
+.pill { border-radius: 999px; padding: 0 7px; font-size: 11px; line-height: 18px; white-space: nowrap; }
+.pill.frontier { background: var(--green-m); color: var(--green); }
+.pill.claimed { background: var(--blue-m); color: var(--blue); }
+.pill.blocked { background: var(--orange-m); color: var(--orange); }
+.pill.resolved { background: var(--green); color: var(--color-white, #fff); display: inline-flex; gap: 3px; align-items: center; }
+.pill.resolved svg { width: 10px; height: 10px; }
+.pill.out-of-scope { background: var(--border); color: var(--muted); }
+.home-box { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-size: 13px; }
+.home-box .actions { margin-top: 8px; }
+.home-box > svg { width: 14px; height: 14px; vertical-align: -2px; margin-right: 4px; color: var(--green); }
+.journey-anchor .home-line svg { width: 11px; height: 11px; color: var(--muted); }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: var(--purple); display: inline-block; flex: none; }
+aside { width: 360px; flex: none; border-left: 1px solid var(--border); overflow: auto; padding: 12px 14px 24px; }
+aside h2 { font-size: 15px; margin: 0 0 6px; line-height: 20px; }
+aside h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 16px 0 4px; font-weight: 600; }
+aside .md { white-space: pre-wrap; word-break: break-word; font-size: 13px; }
+aside ul { margin: 0; padding-left: 18px; font-size: 13px; }
+aside li { margin: 2px 0; }
+.row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.why { font-size: 12px; color: var(--muted); margin-top: 6px; }
+.toast { position: fixed; bottom: 12px; left: 12px; background: var(--fg); color: var(--bg); padding: 6px 10px; border-radius: 6px; font-size: 12px; opacity: 0; transition: opacity .2s; pointer-events: none; max-width: 60%; }
+.toast.on { opacity: .92; }
+.empty { padding: 40px; color: var(--muted); max-width: 560px; }
+.legend { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; font-size: 12px; align-items: center; }
+@media (max-width: 760px) { main { flex-direction: column; } aside { width: auto; border-left: 0; border-top: 1px solid var(--border); max-height: 45%; } }
+</style>
+</head>
+<body>
+<header>
+    <h1 id="title" title="Show map overview">Wayfinder map</h1>
+    <span class="chip" id="tracker"></span>
+    <span id="hereKey"></span>
+    <span id="counts" class="row"></span>
+    <label class="chip"><input type="checkbox" id="showDone" checked> Show resolved</label>
+    <button class="btn" id="refresh">Refresh</button>
+</header>
+<div id="banners"></div>
+<div class="dest" id="dest" hidden></div>
+<div class="graph-help"><span class="type-key type-grilling">Grilling</span><span class="type-key type-prototype">Prototyping</span><span class="type-key type-research">Research</span><span>Solid arrows: tracker dependencies · green: travelled · dotted: journey framing</span></div>
+<main>
+    <div id="graphWrap"><div id="graph"></div></div>
+    <aside id="inspector"></aside>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script>
+const qs = new URLSearchParams(location.search);
+const I = qs.get("i"), T = qs.get("t");
+const api = (p, extra = "") => `${p}?i=${encodeURIComponent(I)}&t=${encodeURIComponent(T)}${extra}`;
+const $ = (id) => document.getElementById(id);
+const CARD_W = 228, CARD_H = 116, GAP = 38, ROW_H = 186, GUTTER = 72;
+const STATUS_LABEL = { frontier: "Frontier", claimed: "Claimed", blocked: "Blocked", resolved: "Resolved", "out-of-scope": "Out of scope" };
+const TYPE_LABEL = { grilling: "Grilling", prototype: "Prototyping", research: "Research", task: "Task", unknown: "Other" };
+const INVOLVEMENT = {
+    HITL: { label: "With you", description: "Human in the loop (HITL): this decision requires a live exchange with you." },
+    AFK: { label: "Agent-led", description: "Away from keyboard (AFK): the agent can work without your live participation. This is not an idle or running status." },
+};
+function involvementBadge(value) {
+    const involvement = INVOLVEMENT[value];
+    return involvement ? `<span title="${esc(involvement.description)}">${involvement.label}</span>` : esc(value ?? "");
+}
+const icon = (body) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+const ICONS = {
+    flag: icon('<path d="M5 21V4m0 1c5-3 8 3 14 0v10c-6 3-9-3-14 0"/>'),
+    fog: icon('<path d="M5.5 18.5h12a3.5 3.5 0 0 0 .2-7 5.5 5.5 0 0 0-10.6-1.6 4.3 4.3 0 0 0-1.6 8.6Z"/><path d="M10 12.5a2 2 0 1 1 3.4 1.4c-.7.6-1.4.9-1.4 1.8m0 1.1h.01"/>'),
+    grilling: icon('<path d="M12 3c1 4-2 5-2 8-1-1-2-2-2-3-2.6 2.4-4 4.6-4 7a8 8 0 0 0 16 0c0-4-2.5-7.5-8-12Z"/>'),
+    prototype: icon('<path d="M14.7 5.1a5 5 0 0 0-6.3 6.3l-5.3 5.3a2.1 2.1 0 1 0 3 3l5.3-5.3a5 5 0 0 0 6.3-6.3l-3.1 3-2.7-.7-.7-2.7 3.5-2.6Z"/>'),
+    research: icon('<circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/>'),
+    task: icon('<rect x="4" y="4" width="16" height="16" rx="3"/><path d="m8 12 3 3 5-6"/>'),
+    check: icon('<path d="m5 12.5 4.5 4.5L19 7.5"/>'),
+    session: icon('<path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h11A2.5 2.5 0 0 1 20 6.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 3.5V17h0A1.5 1.5 0 0 1 4 15.5Z"/>'),
+    home: icon('<path d="M4 11.5 12 5l8 6.5M6.5 10v9h11v-9"/>'),
+};
+const CHECK = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>`;
+const statusPill = (status) => `<span class="pill ${status}">${status === "resolved" ? CHECK : ""}${STATUS_LABEL[status]}</span>`;
+let map = null, selected = null, detail = null;
+let loadRevision = 0, selectionRevision = 0, landedOn = null;
+const PIN = `<svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0a5 5 0 0 0-5 5c0 3.6 4.3 10.2 4.5 10.5a.6.6 0 0 0 1 0C8.7 15.2 13 8.6 13 5a5 5 0 0 0-5-5Zm0 7a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z"/></svg>`;
+// The ticket linked to the session this panel is open in.
+function hereId() {
+    if (!map?.viewerSessionId || !map.tickets) return null;
+    const hit = Object.entries(map.links ?? {}).find(([id, l]) => l.sessionId === map.viewerSessionId && map.tickets.some((t) => t.id === id));
+    return hit?.[0] ?? null;
+}
+const isHome = () => !!map?.home && map.home.sessionId === map.viewerSessionId;
+function homeLabel() {
+    if (!map?.home) return null;
+    return isHome() ? "This session" : (map.home.name || "Map home session");
+}
+let centeredFor = null;
+function centerOn(el) {
+    const wrap = $("graphWrap"), w = wrap.getBoundingClientRect(), r = el.getBoundingClientRect();
+    wrap.scrollTo({ left: wrap.scrollLeft + r.left - w.left - (w.width - r.width) / 2, top: wrap.scrollTop + r.top - w.top - (w.height - r.height) / 2, behavior: "smooth" });
+}
+function routeTo(id) {
+    const seen = new Set(), stack = id ? [id] : [];
+    while (stack.length) {
+        const next = stack.pop();
+        const t = map.tickets.find((x) => x.id === next);
+        if (!t || seen.has(t.id)) continue;
+        seen.add(t.id);
+        stack.push(...t.blockedBy);
+    }
+    return seen;
+}
+const busy = new Set(), sessionMessages = new Map();
+const operationKey = (id) => JSON.stringify([map.key, id]);
+
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const safeUrl = (u) => /^https?:\/\//i.test(u) ? u : null;
+function md(s) {
+    return esc(s)
+        .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, t, u) => { const h = safeUrl(u.replace(/&amp;/g, "&")); return h ? `<a href="${esc(h)}" target="_blank" rel="noopener">${t}</a>` : `${t} (<code>${u}</code>)`; })
+        .replace(/`([^`]+)`/g, "<code>$1</code>")
+        .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
+}
+function toast(msg) { const t = $("toast"); t.textContent = msg; t.classList.add("on"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("on"), 3500); }
+
+async function getJson(url, init) {
+    const r = await fetch(url, init);
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error?.message ?? r.statusText);
+    return j;
+}
+const post = (p, body) => getJson(api(p), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body ?? {}) });
+
+async function load() {
+    const revision = ++loadRevision;
+    let next;
+    try { next = await getJson(api("/api/state")); }
+    catch (e) { next = { empty: true, error: { message: e.message } }; }
+    if (revision !== loadRevision) return;
+    map = next;
+    render();
+    const here = map.empty ? null : hereId();
+    if (here && here !== landedOn) {
+        landedOn = here;
+        await selectTicket(here, { quiet: true });
+        const card = document.querySelector(`.card[data-id="${CSS.escape(here)}"]`);
+        if (card) { centeredFor = map.key; centerOn(card); }
+        return;
+    }
+    if (!map.empty && centeredFor !== map.key) {
+        centeredFor = map.key;
+        const wrap = $("graphWrap");
+        wrap.scrollLeft = (wrap.scrollWidth - wrap.clientWidth) / 2;
+    }
+    if (selected && !map.empty) await selectTicket(selected, { quiet: true });
+}
+
+function render() {
+    $("banners").innerHTML = "";
+    const banner = (cls, text) => $("banners").insertAdjacentHTML("beforeend", `<div class="banner ${cls}">${esc(text)}</div>`);
+    if (map.error) banner("err", `${map.stale ? "Showing last known map. " : ""}Couldn't read the tracker: ${map.error.message}`);
+    for (const w of map.warnings ?? []) banner("warn", w);
+    if (map.empty) {
+        $("title").textContent = map.ref?.key ?? "Wayfinder map";
+        $("tracker").textContent = map.source ?? "";
+        $("counts").innerHTML = ""; $("dest").hidden = true;
+        $("graph").innerHTML = `<div class="empty">${map.source === "external"
+            ? "No snapshot yet. Click <b>Refresh</b> to ask the agent to read this map from the tracker (using your project's Wayfinding operations) and push it here."
+            : "No map loaded."}</div>`;
+        $("inspector").innerHTML = "";
+        return;
+    }
+    $("title").textContent = map.title;
+    $("tracker").textContent = `${map.trackerLabel} · ${new Date(map.fetchedAt).toLocaleTimeString()}`;
+    const c = map.counts;
+    $("counts").innerHTML = ["frontier", "claimed", "blocked", "resolved"].map((k) => `<span class="pill ${k}">${k === "resolved" ? CHECK : ""}${STATUS_LABEL[k]} ${c[k]}</span>`).join("") + (map.fog.length ? `<span class="chip">Fog <b>${map.fog.length}</b></span>` : "") + (map.clear ? `<span class="pill frontier">Way is clear</span>` : "");
+    $("dest").hidden = !map.destination;
+    $("dest").innerHTML = `<span class="lbl">Destination</span>${md(map.destination)}`;
+    const here = hereId(), hereTicket = map.tickets.find((t) => t.id === here);
+    $("hereKey").innerHTML = hereTicket ? `<button class="here-chip" id="jumpHere" title="Show the ticket this session is working on: ${esc(hereTicket.title)}">${PIN}<span>You are here · #${esc(hereTicket.id)}</span></button>` : "";
+    if ($("jumpHere")) $("jumpHere").onclick = async () => {
+        await selectTicket(here);
+        const card = document.querySelector(`.card[data-id="${CSS.escape(here)}"]`);
+        if (card) centerOn(card);
+    };
+    renderGraph();
+    if (!selected) renderOverview();
+}
+
+function renderGraph() {
+    if (!map || map.empty) return;
+    const showDone = $("showDone").checked;
+    const tickets = map.tickets.filter((t) => t.status !== "out-of-scope" && (showDone || t.status !== "resolved"));
+    const oos = map.tickets.filter((t) => t.status === "out-of-scope");
+    const levels = new Map();
+    for (const t of tickets) {
+        if (!levels.has(t.depth)) levels.set(t.depth, []);
+        levels.get(t.depth).push(t);
+    }
+    const rows = [...levels.entries()].sort(([a], [b]) => a - b).map(([, row]) => row);
+    const maxColumns = Math.max(1, oos.length, ...rows.map((row) => row.length));
+    const width = Math.max(570, 2 * GUTTER + maxColumns * CARD_W + (maxColumns - 1) * GAP);
+    const pos = new Map();
+    const html = [];
+    rows.forEach((row, rank) => {
+        const bary = (t) => {
+            const xs = t.blockedBy.map((id) => pos.get(id)?.x).filter((x) => x !== undefined);
+            return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : Infinity;
+        };
+        row.sort((a, b) => bary(a) - bary(b) || a.order - b.order);
+        const rowWidth = row.length * CARD_W + (row.length - 1) * GAP;
+        row.forEach((t, i) => pos.set(t.id, { x: (width - rowWidth) / 2 + i * (CARD_W + GAP), y: 148 + rank * ROW_H, rank }));
+    });
+    const bottom = tickets.length ? 148 + (rows.length - 1) * ROW_H + CARD_H : 90;
+    const fogY = bottom + 85, destinationY = map.fog.length ? fogY + 145 : bottom + 100;
+    let height = destinationY + 120;
+    const anchor = (kind, title, subtitle, y, target, extra = "") => `<button class="journey-anchor ${kind}" data-overview="${target}" style="left:${(width - 284) / 2}px;top:${y}px">${ICONS[kind === "fog" ? "fog" : "flag"]}<span><strong>${esc(title)}</strong><small>${esc(subtitle)}</small>${extra}</span></button>`;
+    const home = homeLabel();
+    html.push(anchor("start", "Start", "The idea you are setting out to explore", 18, "home", home ? `<small class="home-line" title="Ticket sessions are grouped under this session">${ICONS.home}Home · ${esc(home)}</small>` : ""));
+    if (map.fog.length) html.push(anchor("fog", "Into the fog", `${map.fog.length} areas not yet specified`, fogY, "fog"));
+    html.push(anchor("destination", map.clear ? "Way is clear" : "Destination", map.destination || "No destination recorded", destinationY, "destination"));
+    if (oos.length) {
+        html.push(`<div class="lane" style="top:${height}px"></div><div class="colhead" style="left:${GUTTER}px;top:${height + 8}px">Out of scope · off the route</div>`);
+        const rowWidth = oos.length * CARD_W + (oos.length - 1) * GAP;
+        oos.forEach((t, k) => pos.set(t.id, { x: (width - rowWidth) / 2 + k * (CARD_W + GAP), y: height + 35 }));
+        height += CARD_H + 55;
+    }
+    const here = hereId(), route = routeTo(here);
+    for (const t of [...tickets, ...oos]) {
+        const p = pos.get(t.id), link = map.links[t.id];
+        if (t.id === here) html.push(`<div class="here-pin" style="left:${p.x}px;top:${p.y}px">${PIN}You are here</div>`);
+        const type = TYPE_LABEL[t.type] ? t.type : "unknown";
+        html.push(`<button class="card ${t.status} type-${type}${t.id === selected ? " sel" : ""}${t.id === here ? " here" : ""}" data-id="${esc(t.id)}" aria-pressed="${t.id === selected}" style="left:${p.x}px;top:${p.y}px" title="${esc(t.title)}">
+            <span class="node-icon">${t.status === "resolved" ? ICONS.check : ICONS[type] ?? ICONS.task}</span><span class="node-content">
+            <span class="node-type">${TYPE_LABEL[type]} · #${esc(t.id)}</span><span class="t">${esc(t.title)}</span>
+            <span class="m">${statusPill(t.status)}${t.next ? `<span title="First open, unblocked, unclaimed ticket in tracker order.">Next</span>` : involvementBadge(t.hitl)}</span>
+            ${link ? `<span class="session-note" title="${esc(link.name ?? link.sessionId)}">${ICONS.session}${t.id === here ? "This session" : "Has a session"}</span>` : ""}</span>
+        </button>`);
+    }
+    const edges = [];
+    const drawEdge = (from, to, classes, lane) => {
+        const mid = (from.y + to.y) / 2;
+        const d = lane == null ? `M${from.x},${from.y} C${from.x},${mid} ${to.x},${mid} ${to.x},${to.y}`
+            : `M${from.x},${from.y} L${from.x},${from.y + 18} L${lane},${from.y + 18} L${lane},${to.y - 18} L${to.x},${to.y - 18} L${to.x},${to.y}`;
+        edges.push(`<path class="edge ${classes}" d="${d}" marker-end="url(#arrow)"/>`);
+    };
+    for (const t of tickets.filter((t) => !t.blockedBy.some((id) => tickets.some((other) => other.id === id)))) {
+        const p = pos.get(t.id);
+        drawEdge({ x: width / 2, y: 92 }, { x: p.x + CARD_W / 2, y: p.y }, route.has(t.id) ? "context route" : t.status === "resolved" ? "context done" : "context");
+    }
+    let longEdge = 0;
+    for (const t of tickets) for (const b of t.blockedBy) {
+        const from = pos.get(b), to = pos.get(t.id);
+        if (!from || !to || from.rank === undefined) continue;
+        const hl = selected && (selected === b || selected === t.id);
+        const lane = to.rank - from.rank === 1 ? null : (++longEdge % 2 ? 16 + (longEdge % 5) * 8 : width - 16 - (longEdge % 5) * 8);
+        const done = map.tickets.find((x) => x.id === b)?.status === "resolved";
+        drawEdge({ x: from.x + CARD_W / 2, y: from.y + CARD_H }, { x: to.x + CARD_W / 2, y: to.y }, hl ? "hl" : route.has(b) && route.has(t.id) ? "route" : done ? "done" : "", lane);
+    }
+    drawEdge({ x: width / 2, y: bottom + 16 }, { x: width / 2, y: map.fog.length ? fogY : destinationY }, "context");
+    if (map.fog.length) drawEdge({ x: width / 2, y: fogY + 74 }, { x: width / 2, y: destinationY }, "context");
+    $("graph").style.width = `${width}px`;
+    $("graph").style.height = `${height}px`;
+    $("graph").classList.toggle("focused", !!selected);
+    $("graph").innerHTML = `<svg class="edges" width="${width}" height="${height}" aria-hidden="true"><defs><marker id="arrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L7,3.5 L0,7" fill="none" stroke="var(--muted)" stroke-width="1.2"/></marker></defs>${edges.join("")}</svg>${html.join("")}`;
+    for (const el of document.querySelectorAll(".card[data-id]")) el.onclick = () => selectTicket(el.dataset.id);
+    for (const el of document.querySelectorAll("[data-overview]")) el.onclick = () => {
+        selected = null; selectionRevision++; renderGraph(); renderOverview();
+        if (el.dataset.overview !== "overview") document.querySelector(`[data-section="${el.dataset.overview}"]`)?.scrollIntoView({ block: "nearest" });
+    };
+}
+
+function renderOverview() {
+    detail = null;
+    const list = (items, empty) => items.length ? `<ul>${items.map((d) => `<li>${d.title ? (ticketByRef(d) ? `<button class="btn link" data-sel="${esc(ticketByRef(d).id)}">${esc(d.title)}</button>` : md(`[${d.title}](${d.url})`)) + ": " : ""}${md(d.gist)}</li>`).join("")}</ul>` : `<div class="why">${empty}</div>`;
+    $("inspector").innerHTML = `
+        <h2>${esc(map.title)}</h2>
+        <div class="row"><span class="chip">${esc(map.trackerLabel)}</span>${map.url && safeUrl(map.url) ? `<a href="${esc(map.url)}" target="_blank" rel="noopener">Open map</a>` : `<code>${esc(map.mapRef)}</code>`}</div>
+        <h3 data-section="home">Map home</h3>${homeBox()}
+        <h3 data-section="destination">Destination</h3><div class="md">${md(map.destination || "No destination recorded.")}</div>
+        ${map.notes ? `<h3>Notes</h3><div class="md">${md(map.notes)}</div>` : ""}
+        <h3>Decisions so far</h3>${list(map.decisions, "None yet.")}
+        <h3 data-section="fog">Not yet specified</h3>${map.fog.length ? `<ul>${map.fog.map((f) => `<li>${md(f)}</li>`).join("")}</ul>` : `<div class="why">No fog.</div>`}
+        <h3>Out of scope</h3>${list(map.outOfScope, "Nothing ruled out.")}
+        <h3>Legend</h3>
+        <div class="legend">
+            <span class="pill frontier">Frontier</span><span>Open, unblocked, unclaimed: takeable now.</span>
+            <span class="pill claimed">Claimed</span><span>Assigned in the tracker; a session link is separate.</span>
+            <span class="pill blocked">Blocked</span><span>Waiting on an open ticket; drawn with a dashed border.</span>
+            <span>${statusPill("resolved")}</span><span>Decided; the card gets a green check and its outgoing arrows turn green (travelled).</span>
+            <span class="chip">Has a session</span><span>Open the ticket to navigate to its app session.</span>
+            <span class="here-key">${PIN}You are here</span><span>The ticket linked to the session this panel is open in, with its route from Start in blue. Blue is used for nothing else.</span>
+            <span class="chip">Map home</span><span>The session ticket sessions are started from and grouped under, shown on Start.</span>
+            <span class="chip">With you</span><span>Human in the loop (HITL): a live discussion with you is required.</span>
+            <span class="chip">Agent-led</span><span>Away from keyboard (AFK): no live participation required; not a session activity status.</span>
+            <span class="chip">Next</span><span>First available ticket in tracker order, not work already underway.</span>
+        </div>
+        <div class="why">Colors indicate activity type; status changes a card's weight (solid, dashed, or checked). Solid arrows point from a prerequisite to its dependent ticket. Dotted connectors frame the journey; they are not tracker dependencies. Start and destination are visual markers, not tickets.</div>`;
+    bindSelectLinks();
+    bindHomeActions($("inspector"));
+}
+
+function homeBox() {
+    const here = hereId();
+    if (isHome()) return `<div class="home-box">${ICONS.home}<b>This session is the map home.</b><div class="why">Ticket sessions you start here are grouped under it, mirroring the map's ticket list. Dependencies stay on the graph.</div></div>`;
+    if (map.home) return `<div class="home-box"><div>Ticket sessions are grouped under <b>${esc(map.home.name || "the map home session")}</b>.</div>
+        <div class="actions"><button class="btn primary" data-home-action="go">Go to map home</button>${here ? "" : `<button class="btn" data-home-action="make">Make this session the home</button>`}</div>
+        <div class="session-status" data-home-status role="status" aria-live="polite"></div></div>`;
+    return `<div class="home-box"><div>No map home yet.</div>${here ? `<div class="why">This is a ticket session, so it can't be the home. Open the map from the session that charted it.</div>` : `<div class="actions"><button class="btn primary" data-home-action="make">Make this session the home</button></div><div class="why">Starting a ticket here also makes this session the home.</div>`}
+        <div class="session-status" data-home-status role="status" aria-live="polite"></div></div>`;
+}
+
+function bindHomeActions(root) {
+    for (const el of root.querySelectorAll("[data-home-action]")) el.onclick = async () => {
+        const go = el.dataset.homeAction === "go", status = root.querySelector("[data-home-status]");
+        el.disabled = true;
+        try {
+            await post(go ? "/api/home" : "/api/make-home", {});
+            toast(go ? "Opened the map home." : "This session is now the map home.");
+            if (!go) await load();
+        } catch (e) {
+            if (status) { status.textContent = e.message; status.classList.add("error"); }
+        } finally { el.disabled = false; }
+    };
+}
+
+function ticketByRef(d) {
+    return map.tickets.find((t) => (d.url && t.url && (t.url === d.url || d.url.endsWith(t.url) || t.url.endsWith(d.url))) || (d.title && t.title === d.title));
+}
+function bindSelectLinks() { for (const el of document.querySelectorAll("[data-sel]")) el.onclick = () => selectTicket(el.dataset.sel); }
+
+async function selectTicket(id, { quiet } = {}) {
+    const revision = ++selectionRevision;
+    const key = map?.key;
+    if (!map?.tickets?.some((t) => t.id === id)) { selected = null; renderGraph(); renderOverview(); return; }
+    selected = id;
+    detail = null;
+    renderGraph();
+    const base = map.tickets.find((t) => t.id === id);
+    renderTicket(base);
+    try {
+        const result = await getJson(api("/api/ticket", `&id=${encodeURIComponent(id)}`));
+        if (revision === selectionRevision && selected === id && map.key === key) { detail = result; renderTicket(detail); }
+    } catch (e) { if (revision === selectionRevision && !quiet) toast(e.message); }
+    if (revision !== selectionRevision) return;
+    document.querySelector(`.card[data-id="${CSS.escape(id)}"]`)?.scrollIntoView({ block: "nearest", inline: "nearest" });
+}
+
+function renderTicket(t) {
+    const link = map.links[t.id];
+    const controls = map.sessionControls ?? { canStart: false, canOpen: false, canLink: false, error: "Reload the Wayfinder extension to enable the updated session controls." };
+    const key = operationKey(t.id), working = busy.has(key), isHere = t.id === hereId();
+    const awayFromHome = !!map.home && !isHome(), homeless = !map.home && !!hereId();
+    const message = sessionMessages.get(key);
+    const ref = (id) => { const x = map.tickets.find((y) => y.id === id); const ext = map.externalBlockers?.[id]; return x ? `<li><button class="btn link" data-sel="${esc(id)}">${esc(x.title)}</button> ${statusPill(x.status)}</li>` : `<li>${ext?.url && safeUrl(ext.url) ? `<a href="${esc(ext.url)}" target="_blank" rel="noopener">${esc(ext.title ?? id)}</a>` : esc(ext?.title ?? id)} <span class="pill ${ext?.open === false ? "resolved" : "blocked"}">${ext ? (ext.open ? "Open" : "Closed") : "Unknown"}</span></li>`; };
+    let why = "";
+    if (!link && t.status !== "frontier") why = {
+        claimed: `Claimed by ${esc(t.assignee ?? "someone in the tracker")}. Link the existing session below; a second session cannot start on a claimed ticket.`,
+        blocked: `Blocked until ${t.openBlockers.length} ticket${t.openBlockers.length > 1 ? "s close" : " closes"}.`,
+        resolved: "Already resolved.",
+        "out-of-scope": "Ruled out of scope.",
+    }[t.status];
+    $("inspector").innerHTML = `
+        <div class="row" style="margin-bottom:6px"><button class="btn link" id="back">← Map overview</button></div>
+        <h2>${esc(t.title)}</h2>
+        <div class="row">${statusPill(t.status)}<span class="chip">${esc(TYPE_LABEL[t.type] ?? "Other")}</span><span class="chip">${involvementBadge(t.hitl)}</span>${t.next ? `<span class="chip"><b>Next</b> on the frontier</span>` : ""}</div>
+        <div class="actions">
+            ${isHere ? `<span class="here-key">${PIN}You are here</span>` : link ? `<button class="btn primary" id="resume" ${controls.canOpen && !working ? "" : "disabled"}>${working ? "Please wait…" : "Open session"}</button>` : awayFromHome && t.status === "frontier" ? `<button class="btn primary" data-home-action="go" ${controls.canOpen ? "" : "disabled"}>Go to map home to start</button>`
+              : `<button class="btn primary" id="start" ${t.status === "frontier" && !map.error && controls.canStart && !working && !homeless ? "" : "disabled"}>${working ? "Please wait…" : "Start session"}</button>`}
+            ${t.url && safeUrl(t.url) ? `<a class="btn" href="${esc(t.url)}" target="_blank" rel="noopener" style="text-decoration:none">Open in tracker</a>` : ""}
+            ${link ? `<button class="btn" id="unlink" ${working ? "disabled" : ""}>Unlink</button>` : `<button class="btn" id="chooseSession" ${controls.canLink && !working ? "" : "disabled"}>Link existing session</button>`}
+        </div>
+        <div id="sessionPicker" class="session-picker" hidden></div>
+        <div class="session-status${message?.error ? " error" : ""}" id="sessionStatus" role="status" aria-live="polite">${message ? esc(message.text) : ""}</div>
+        ${controls.error ? `<div class="why">${esc(controls.error)}</div>` : ""}
+        ${map.error && !link ? `<div class="why">Tracker access must be restored before starting work.</div>` : ""}
+        ${why ? `<div class="why">${why}</div>` : ""}
+        ${!link && t.status === "frontier" && awayFromHome ? `<div class="why">Ticket sessions are started from the map home (<b>${esc(map.home.name || "map home session")}</b>) so they're grouped together under it, like the tickets under this map.</div>` : ""}
+        ${!link && t.status === "frontier" && homeless ? `<div class="why">This ticket session can't start other tickets. Open the map from the session that charted it; that becomes the map home.</div>` : ""}
+        ${!link && t.status === "frontier" && !map.home && !homeless ? `<div class="why">Starting here makes this session the map home; later ticket sessions will be grouped under it.</div>` : ""}
+        <div class="session-status" data-home-status role="status" aria-live="polite"></div>
+        ${isHere ? `<div class="why">This is the session you're viewing.</div>` : ""}
+        ${link ? `<div class="why">Session: <code>${esc(link.name ?? link.sessionId)}</code> · linked ${esc(new Date(link.linkedAt).toLocaleString())}</div>` : ""}
+        ${t.type === "research" && t.status === "frontier" && !link ? `<div class="why">Research is agent-led: it does not require a live discussion. /wayfinder normally resolves research with subagents while charting; a separate session is optional.</div>` : ""}
+        ${t.assignee ? `<h3>Assignee</h3><div>${esc(t.assignee)}</div>` : ""}
+        <h3>Question</h3><div class="md">${t.question ? md(t.question) : `<span class="why">No question body.</span>`}</div>
+        ${t.answer ? `<h3>Resolution</h3><div class="md">${md(t.answer)}</div>` : ""}
+        ${t.blockedBy.length ? `<h3>Blocked by</h3><ul>${t.blockedBy.map(ref).join("")}</ul>` : ""}
+        ${t.blocks.length ? `<h3>Blocks</h3><ul>${t.blocks.map(ref).join("")}</ul>` : ""}
+        ${t.url && !safeUrl(t.url) ? `<h3>File</h3><code>${esc(t.url)}</code>` : ""}`;
+    $("back").onclick = () => { selected = null; selectionRevision++; renderGraph(); renderOverview(); };
+    bindSelectLinks();
+    const mapKey = map.key;
+    const act = (id, path, msg, extra = () => ({})) => {
+        const b = $(id);
+        if (b) b.onclick = async () => {
+            if (busy.has(key)) return;
+            const args = { id: t.id, ...extra() };
+            busy.add(key);
+            sessionMessages.delete(key);
+            renderTicket(t);
+            try {
+                const result = await post(path, args);
+                const text = result.requested ? "The older provider queued this request for the agent. Reload the extension for direct session controls." : msg;
+                sessionMessages.set(key, { text, error: false });
+                toast(text);
+                await load();
+            } catch (e) {
+                sessionMessages.set(key, { text: e.message, error: true });
+            } finally {
+                busy.delete(key);
+                if (map.key === mapKey && selected === t.id) renderTicket(detail?.id === t.id ? detail : map.tickets.find((ticket) => ticket.id === t.id) ?? t);
+            }
+        };
+    };
+    bindHomeActions($("inspector"));
+    act("start", "/api/start", "Created and linked the new ticket session.");
+    act("resume", "/api/resume", "Opened the linked session.");
+    act("unlink", "/api/unlink", "Unlinked. The session and tracker claim were not changed.");
+    const choose = $("chooseSession");
+    if (choose) choose.onclick = async () => {
+        choose.disabled = true;
+        const picker = $("sessionPicker");
+        picker.hidden = false;
+        picker.textContent = "Loading app sessions…";
+        try {
+            const result = await getJson(api("/api/sessions"));
+            if (map.key !== mapKey || selected !== t.id) return;
+            const current = $("sessionPicker");
+            current.hidden = false;
+            current.innerHTML = result.sessions.length
+                ? `<select id="existingSession" aria-label="Existing app session"><option value="">Choose a session</option>${result.sessions.map((s) => `<option value="${esc(s.id)}">${esc(s.name)}</option>`).join("")}</select><button class="btn" id="linkChosen" disabled>Link session</button>`
+                : "No existing app sessions are available.";
+            if ($("existingSession")) {
+                $("existingSession").onchange = () => { $("linkChosen").disabled = !$("existingSession").value; };
+                act("linkChosen", "/api/link", "Linked the existing session.", () => ({ sessionId: $("existingSession").value }));
+            }
+        } catch (e) {
+            if (map.key === mapKey && selected === t.id) { $("sessionPicker").hidden = false; $("sessionPicker").textContent = e.message; }
+        } finally {
+            if (map.key === mapKey && selected === t.id && $("chooseSession")) $("chooseSession").disabled = false;
+        }
+    };
+}
+
+$("title").onclick = () => { if (map && !map.empty) { selected = null; selectionRevision++; renderGraph(); renderOverview(); } };
+$("showDone").onchange = () => renderGraph();
+$("refresh").onclick = async () => {
+    $("refresh").disabled = true;
+    try { const r = await post("/api/refresh"); if (r.requested) toast("Asked the agent to re-read this map from the tracker."); }
+    catch (e) { toast(e.message); } finally { $("refresh").disabled = false; }
+};
+const es = new EventSource(api("/events"));
+es.addEventListener("changed", () => load());
+es.addEventListener("select", (e) => { const { id } = JSON.parse(e.data); selectTicket(id); });
+load();
+</script>
+</body>
+</html>
